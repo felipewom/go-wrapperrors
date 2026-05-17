@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"strings"
 	"testing"
 
 	"github.com/felipewom/go-wrapperrors/wrapperrors"
@@ -15,8 +14,8 @@ import (
 // TestRefactoredNewError_Empty replaces TestNewError_Empty
 func TestRefactoredNewError_Empty(t *testing.T) {
 	err := wrapperrors.Define("testing_error", 0). // Define creates a base error
-								WithMessage("message a").
-								WithMessage("message b")
+							WithMessage("message a").
+							WithMessage("message b")
 
 	assert.Equal(t, []string{"testing_error"}, err.GetCodes())
 	assert.Equal(t, []string{"message a", "message b"}, err.GetMessages())
@@ -42,7 +41,7 @@ func TestRefactoredNewErrorFromRaw(t *testing.T) {
 		assert.Equal(t, http.StatusInternalServerError, err.GetStatuses()[0].Code)
 		assert.Equal(t, "Internal Server Error", err.GetStatuses()[0].Message)
 	}
-	
+
 	assert.Equal(t, cause, errors.Unwrap(err)) // Check that the cause is correctly wrapped
 
 	// Check Error() output
@@ -104,11 +103,10 @@ func TestErrorsIs(t *testing.T) {
 
 	assert.True(t, errors.Is(w2, def2), "Nested: w2 should be Is def2 (itself)")
 	assert.True(t, errors.Is(w2, def1), "Nested: w2 should be Is def1 (via w1)")
-	
+
 	// Test errors.Is against the direct cause of w1, which is def2
 	unwrappedW1 := errors.Unwrap(w1)
 	assert.True(t, errors.Is(unwrappedW1, def2), "Unwrapped w1 should be def2")
-
 
 	// Test case where the error being checked IS the definition itself
 	assert.True(t, errors.Is(def1, def1), "Definition should be Is itself")
@@ -117,7 +115,6 @@ func TestErrorsIs(t *testing.T) {
 	someOtherStdErr := errors.New("some other standard error")
 	assert.False(t, errors.Is(wrappedStdErr, someOtherStdErr))
 }
-
 
 type MyCustomError struct {
 	Msg string
@@ -153,7 +150,7 @@ func TestErrorsAs(t *testing.T) {
 	}
 
 	// Case 3: errors.As where target is not in the chain
-	var anotherTarget *sql.Tx // Some unrelated type
+	var anotherTarget *MyCustomError
 	assert.False(t, errors.As(errWithCause, &anotherTarget), "Should not 'As' an unrelated type")
 }
 
@@ -185,12 +182,13 @@ func TestJsonOutput(t *testing.T) {
 		found400 := false
 		found402 := false
 		for _, s := range statuses {
-			codeVal, _ := s["code"].(float64) // JSON numbers are float64 by default
-			if int(codeVal) == http.StatusBadRequest {
+			codeVal, ok := s["code"].(int)
+			assert.True(t, ok, "status code should be an int")
+			if codeVal == http.StatusBadRequest {
 				found400 = true
 				assert.Equal(t, "Bad Request", s["message"])
 			}
-			if int(codeVal) == http.StatusPaymentRequired {
+			if codeVal == http.StatusPaymentRequired {
 				found402 = true
 				assert.Equal(t, "Payment Required", s["message"])
 			}
@@ -202,10 +200,10 @@ func TestJsonOutput(t *testing.T) {
 	// Check cause
 	causeMap, ok := jsonMap["cause"].(map[string]interface{})
 	assert.True(t, ok, "JSON 'cause' should be a map for ErrorWrapper cause")
-	
+
 	causeCodes, _ := causeMap["code"].([]string)
 	assert.Equal(t, []string{"json_cause_code"}, causeCodes)
-	
+
 	causeMessages, _ := causeMap["message"].([]string)
 	assert.Equal(t, []string{"json_cause_message"}, causeMessages)
 }
@@ -234,12 +232,12 @@ func TestFmtFormatter(t *testing.T) {
 
 	assert.Contains(t, plusVVerb, "\"code\": [\"fmt_code\"]")
 	assert.Contains(t, plusVVerb, "\"message\": [\"fmt_msg1\"]")
-	
+
 	// Check for status details (order independent)
 	assert.Contains(t, plusVVerb, "\"status\": [")
 	assert.Contains(t, plusVVerb, "\"message\": \"Internal Server Error\", \"code\": 500")
 	assert.Contains(t, plusVVerb, "\"message\": \"Forbidden\", \"code\": 403")
-	
+
 	assert.Contains(t, plusVVerb, "\"cause\": \"fmt_root_cause\"") // Cause is a standard error
 }
 
@@ -262,7 +260,6 @@ func TestEdgeCasesAndAPIHelpers(t *testing.T) {
 	// Our FromDefinition when cause is nil uses errors.New(primaryMessage) for its .cause field.
 	assert.Nil(t, errors.Unwrap(instanceFromNilCause.Unwrap()), "Unwrap(Unwrap()) should be nil for FromDefinition(nil)")
 	assert.Contains(t, instanceFromNilCause.Error(), "codes:def_nil_cause", "Error message for FromDefinition(nil)")
-
 
 	// Helpers with non-ErrorWrapper errors
 	stdErr := errors.New("std error for helpers")
@@ -290,13 +287,11 @@ func TestEdgeCasesAndAPIHelpers(t *testing.T) {
 	assert.Contains(t, emptyCodeDef.Error(), "codes:") // Should still contain "codes:" part
 	assert.NotContains(t, emptyCodeDef.Error(), "codes:,", "Error string should not have hanging comma for empty code")
 
-
 	// WithMessage with empty string
 	withEmptyMsg := emptyCodeDef.WithMessage("")
 	assert.Equal(t, []string{""}, withEmptyMsg.GetMessages(), "WithMessage with empty string")
 	assert.Contains(t, withEmptyMsg.Error(), "messages:")
 	assert.NotContains(t, withEmptyMsg.Error(), "messages:,", "Error string should not have hanging comma for empty message")
-
 
 	// Chaining WithCause(nil)
 	errChainedNilCause := wrapperrors.Define("chain_nil_cause", 500).WithCause(nil)
@@ -320,13 +315,13 @@ func TestJsonOutputWithNilCause(t *testing.T) {
 }
 
 func TestJsonWithStandardErrorCause(t *testing.T) {
-    stdCause := errors.New("standard cause for json")
-    err := wrapperrors.Define("json_std_cause", http.StatusOK).WithCause(stdCause)
-    jsonMap := err.Json()
+	stdCause := errors.New("standard cause for json")
+	err := wrapperrors.Define("json_std_cause", http.StatusOK).WithCause(stdCause)
+	jsonMap := err.Json()
 
-    causeVal, ok := jsonMap["cause"].(string)
-    assert.True(t, ok, "jsonMap[cause] should be a string for standard error cause")
-    assert.Equal(t, stdCause.Error(), causeVal)
+	causeVal, ok := jsonMap["cause"].(string)
+	assert.True(t, ok, "jsonMap[cause] should be a string for standard error cause")
+	assert.Equal(t, stdCause.Error(), causeVal)
 }
 
 // Ensure all public API methods are safe with nil receiver (though not idiomatic to call them on nil)
@@ -337,11 +332,11 @@ func TestJsonWithStandardErrorCause(t *testing.T) {
 // This is standard Go behavior. We can test the package-level functions.
 
 func TestHelperFunctionsWithNilError(t *testing.T) {
-    assert.Equal(t, "", wrapperrors.Code(nil))
-    assert.Equal(t, "", wrapperrors.Message(nil))
-    assert.Equal(t, 0, wrapperrors.Status(nil))
-    // wrapperrors.Is(nil, nil) should be true by errors.Is semantics
-    assert.True(t, wrapperrors.Is(nil, nil), "Is(nil, nil) should be true")
-    assert.False(t, wrapperrors.Is(wrapperrors.Define("d",0), nil), "Is(err, nil) should be false")
-    assert.False(t, wrapperrors.Is(nil, wrapperrors.Define("d",0)), "Is(nil, err) should be false")
+	assert.Equal(t, "", wrapperrors.Code(nil))
+	assert.Equal(t, "", wrapperrors.Message(nil))
+	assert.Equal(t, 0, wrapperrors.Status(nil))
+	// wrapperrors.Is(nil, nil) should be true by errors.Is semantics
+	assert.True(t, wrapperrors.Is(nil, nil), "Is(nil, nil) should be true")
+	assert.False(t, wrapperrors.Is(wrapperrors.Define("d", 0), nil), "Is(err, nil) should be false")
+	assert.False(t, wrapperrors.Is(nil, wrapperrors.Define("d", 0)), "Is(nil, err) should be false")
 }
